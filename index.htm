@@ -283,7 +283,7 @@ footer{text-align:center;padding:1.5rem;font-size:.72rem;color:var(--muted)}
           </div>
 
           <div class="field" style="margin-top:.4rem">
-            <label>Heating Schedule Mode</label>
+            <label for="heat-mode">Heating Schedule Mode</label>
             <select id="heat-mode" onchange="go()">
               <option value="hours" selected>Custom heating hours/day</option>
               <option value="offpeak">Off-peak only</option>
@@ -291,17 +291,18 @@ footer{text-align:center;padding:1.5rem;font-size:.72rem;color:var(--muted)}
           </div>
 
           <div class="field">
-            <label>Heating Hours per Day <span class="fval" id="heat-hours-v">24.0 h</span></label>
+            <label for="heat-hours">Heating Hours per Day <span class="fval" id="heat-hours-v">24.0 h</span></label>
             <input type="range" id="heat-hours" min="0" max="24" step="0.5" value="24"
+                  aria-describedby="heat-hours-help"
                   oninput="sv('heat-hours','heat-hours-v',' h',1);go()">
           </div>
 
           <div class="field">
-            <label>Annual Cost Target</label>
+            <label for="cost-target">Annual Cost Target</label>
             <input type="number" id="cost-target" min="0" max="50000" step="10" value="500"
                   oninput="go()"> <span style="font-size:.75rem;color:var(--muted)">£ / year</span>
           </div>
-          <p class="hint">Choose custom heating hours/day or enforce off-peak-only running. The cost target is used for the inverse temperature-vs-budget chart.</p>
+          <p class="hint" id="heat-hours-help">Choose custom heating hours/day or enforce off-peak-only running. The cost target is used for the inverse temperature-vs-budget chart.</p>
         </div>
       </div>
     </aside>
@@ -854,8 +855,9 @@ function go() {
   // ── Chart: inverse target vs annual cost ───────────────────────────────────
   const tMin = 18, tMax = 38, tStep = 0.5;
   const inversePts = [];
+  const probeInp = {...inp};
   for (let t = tMin; t <= tMax + 1e-9; t += tStep) {
-    const probeInp = {...inp, target:+t.toFixed(1)};
+    probeInp.target = +t.toFixed(1);
     const probeAnnual = MONTHS.reduce((sum, _, mi) => sum + monthCalc(probeInp, pool, mi).monCost, 0);
     inversePts.push({x:+probeAnnual.toFixed(2), y:+t.toFixed(1)});
   }
