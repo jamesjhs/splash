@@ -4,8 +4,29 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#023e8a">
+<meta name="application-name" content="splash!">
+<meta name="description" content="splash! — costing for your playpool. Explore pool heating thermodynamics, energy demand, off-peak strategies, and annual electricity cost with interactive charts.">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1">
+<meta property="og:type" content="website">
+<meta property="og:title" content="splash! — costing for your playpool">
+<meta property="og:description" content="Interactive playpool thermal and energy-cost calculator with monthly analysis, heat-loss modelling, and off-peak tariff scenarios.">
+<meta property="og:site_name" content="splash!">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="splash! — costing for your playpool">
+<meta name="twitter:description" content="Plan your playpool heating costs with thermodynamic modelling and interactive data visualisation.">
 <link rel="manifest" href="./manifest.webmanifest">
-<title>Pool Thermal &amp; Energy Calculator</title>
+<title>splash! — costing for your playpool</title>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "splash!",
+  "applicationCategory": "CalculatorApplication",
+  "description": "Interactive playpool thermodynamics and electricity-cost calculator.",
+  "operatingSystem": "Any",
+  "browserRequirements": "Requires JavaScript"
+}
+</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
 
@@ -97,6 +118,9 @@ input[type=range]{width:100%;accent-color:var(--blue);cursor:pointer;margin:3px 
   margin-bottom:1rem;font-size:.84rem;line-height:1.8
 }
 .alert strong{color:var(--blue)}
+.diag-list{list-style:none;display:grid;gap:.4rem;font-size:.8rem}
+.diag-pass{color:var(--green);font-weight:700}
+.diag-warn{color:var(--amber);font-weight:700}
 
 /* table */
 .tbl-wrap{overflow-x:auto}
@@ -141,11 +165,26 @@ footer{text-align:center;padding:1.5rem;font-size:.72rem;color:var(--muted)}
 <body>
 
 <header>
-  <h1>&#x1F3CA;&#xFE0F; Pool Thermal &amp; Energy Calculator</h1>
-  <p>Heat-loss modelling &amp; electricity cost analysis for outdoor swimming pools in the UK</p>
+  <h1>splash!</h1>
+  <p>costing for your playpool</p>
 </header>
 
 <div class="wrap">
+
+  <noscript>
+    <div class="card" style="margin-bottom:1rem">
+      JavaScript is required for live thermodynamic calculations and charts in splash!.
+    </div>
+  </noscript>
+
+  <section class="card" style="margin-bottom:1rem">
+    <h2 class="sec">Thermal model overview</h2>
+    <p style="font-size:.85rem;color:var(--muted)">
+      This calculator models playpool heating using energy balance:
+      heater input + solar gain − environmental heat loss.
+      Outputs include monthly maintenance demand, target reachability, and annual electricity cost for UK climate assumptions.
+    </p>
+  </section>
 
   <div class="mobile-toolbar">
     <button id="open-controls" type="button">⚙️ Adjust Settings</button>
@@ -264,6 +303,13 @@ footer{text-align:center;padding:1.5rem;font-size:.72rem;color:var(--muted)}
 
       <div class="alert" id="analysis-box">Loading…</div>
 
+      <div class="card" style="margin-bottom:1rem">
+        <div class="card-title">Math Integrity Checks</div>
+        <ul class="diag-list" id="math-checks">
+          <li>Running checks…</li>
+        </ul>
+      </div>
+
       <div class="sec">📅 Monthly Analysis — Maintaining Target Temperature</div>
       <div class="card" style="margin-bottom:1rem">
         <div class="tbl-wrap">
@@ -281,7 +327,7 @@ footer{text-align:center;padding:1.5rem;font-size:.72rem;color:var(--muted)}
                 <th>Max Temp<br>Off-Peak Only</th>
                 <th>Target<br>Reachable?</th>
                 <th>Daily Cost<br>(best rate)</th>
-                <th>Monthly Cost<br>(31 days)</th>
+                <th>Monthly Cost<br>(actual days)</th>
               </tr>
             </thead>
             <tbody id="monthly-tbody"></tbody>
@@ -316,6 +362,7 @@ footer{text-align:center;padding:1.5rem;font-size:.72rem;color:var(--muted)}
 </div><!-- /wrap -->
 
 <footer>
+  splash! &mdash; costing for your playpool.<br>
   Physics model: surface losses combine free-convection, evaporation (dominant) and long-wave radiation; parameterised by shade/shelter.
   UK East Anglia climate data. Costs are indicative estimates only. Not for safety-critical application.
 </footer>
@@ -599,6 +646,7 @@ function go() {
   }
 
   const annualCost = monthly.reduce((s, m) => s + m.monCost, 0);
+  const annualNeedKWh = monthly.reduce((s, m, mi) => s + m.dNeed * DAYSMON[mi], 0);
   document.getElementById('s-ann').textContent = '£' + fmt(annualCost, 2);
 
   // ── Analysis text ────────────────────────────────────────────────────────────
@@ -642,10 +690,9 @@ function go() {
 
   html += `<strong>Heat-up note:</strong> The ${fmtN(pool.cap/1000)} kJ/°C thermal mass means the pool `;
   html += `changes temperature slowly (${fmt(pool.tau_h,1)} h time constant). `;
-  html += `Overnight it cools by roughly ${fmt(UK_T[JUL]*0,(0))}`;
   // Rough overnight cooling estimate (8 h, from target, heater off)
   const overnightDrop = (inp.target - UK_T[JUL]) * (1 - Math.exp(-8/pool.tau_h));
-  html += `<strong>${fmt(overnightDrop,1)}°C</strong> over 8 h with no heating.`;
+  html += `Overnight it cools by roughly <strong>${fmt(overnightDrop,1)}°C</strong> over 8 h with no heating.`;
 
   document.getElementById('analysis-box').innerHTML = html;
 
@@ -672,7 +719,7 @@ function go() {
       <td>${fmt(m.cost_p,1)} p</td>
       <td>£${fmt(m.monCost,2)}</td>
     </tr>`;
-    annRow.dNeed   += m.dNeed;
+    annRow.dNeed   += m.dNeed * DAYSMON[mi];
     annRow.monCost += m.monCost;
   });
   rows += `<tr class="totals">
@@ -682,6 +729,24 @@ function go() {
     <td>£${fmt(annRow.monCost,2)}</td>
   </tr>`;
   tbody.innerHTML = rows;
+
+  const uaResidual = Math.abs(pool.UA - (pool.UA_s + pool.UA_w + pool.UA_b));
+  const qnetResidual = Math.abs(julData.qNet - Math.max(0, julData.qLoss - julData.solarW));
+  let tResidual = null;
+  if (isFinite(tHeat)) {
+    const T_eq = UK_T[JUL] + (pool.heaterW + julSolar) / pool.UA;
+    const tBack = T_eq + (UK_T[JUL] - T_eq) * Math.exp(-tHeat / pool.tau_h);
+    tResidual = Math.abs(tBack - inp.target);
+  }
+  const needResidual = Math.abs(annRow.dNeed - annualNeedKWh);
+  const costResidual = Math.abs(annRow.monCost - annualCost);
+  document.getElementById('math-checks').innerHTML = `
+    <li><span class="${uaResidual < 1e-6 ? 'diag-pass' : 'diag-warn'}">${uaResidual < 1e-6 ? 'PASS' : 'WARN'}</span> UA decomposition residual: ${fmt(uaResidual, 6)} W/K</li>
+    <li><span class="${qnetResidual < 1e-6 ? 'diag-pass' : 'diag-warn'}">${qnetResidual < 1e-6 ? 'PASS' : 'WARN'}</span> July net-heat balance residual: ${fmt(qnetResidual, 6)} W</li>
+    <li><span class="${(tResidual === null || tResidual < 0.05) ? 'diag-pass' : 'diag-warn'}">${(tResidual === null || tResidual < 0.05) ? 'PASS' : 'WARN'}</span> Heat-up inverse check residual: ${tResidual === null ? 'n/a (target unreachable)' : `${fmt(tResidual, 3)} °C`}</li>
+    <li><span class="${needResidual < 1e-6 ? 'diag-pass' : 'diag-warn'}">${needResidual < 1e-6 ? 'PASS' : 'WARN'}</span> Annual energy aggregation residual: ${fmt(needResidual, 6)} kWh</li>
+    <li><span class="${costResidual < 1e-6 ? 'diag-pass' : 'diag-warn'}">${costResidual < 1e-6 ? 'PASS' : 'WARN'}</span> Annual cost aggregation residual: £${fmt(costResidual, 6)}</li>
+  `;
 
   // ── Chart: monthly costs ──────────────────────────────────────────────────
   const costVals = monthly.map(m => +m.monCost.toFixed(2));

@@ -1,7 +1,7 @@
 {
-  "name": "Pool Thermal & Energy Calculator",
-  "short_name": "PoolCalc",
-  "description": "Interactive pool thermal and energy calculator with charts.",
+  "name": "splash!",
+  "short_name": "splash!",
+  "description": "splash! costing for your playpool — thermal and energy cost calculator.",
   "start_url": "./index.htm",
   "scope": "./",
   "display": "standalone",
