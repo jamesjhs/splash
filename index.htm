@@ -281,7 +281,27 @@ footer{text-align:center;padding:1.5rem;font-size:.72rem;color:var(--muted)}
               <input type="time" id="op-end" value="05:30" onchange="go()">
             </div>
           </div>
-          <p class="hint">Off-peak window shown above (Octopus Go / Economy 7 style). Heater is assumed to run only during this window for cost estimates.</p>
+
+          <div class="field" style="margin-top:.4rem">
+            <label>Heating Schedule Mode</label>
+            <select id="heat-mode" onchange="go()">
+              <option value="hours" selected>Custom heating hours/day</option>
+              <option value="offpeak">Off-peak only</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label>Heating Hours per Day <span class="fval" id="heat-hours-v">24.0 h</span></label>
+            <input type="range" id="heat-hours" min="0" max="24" step="0.5" value="24"
+                  oninput="sv('heat-hours','heat-hours-v',' h',1);go()">
+          </div>
+
+          <div class="field">
+            <label>Annual Cost Target</label>
+            <input type="number" id="cost-target" min="0" max="50000" step="10" value="500"
+                  oninput="go()"> <span style="font-size:.75rem;color:var(--muted)">£ / year</span>
+          </div>
+          <p class="hint">Choose custom heating hours/day or enforce off-peak-only running. The cost target is used for the inverse temperature-vs-budget chart.</p>
         </div>
       </div>
     </aside>
@@ -295,10 +315,11 @@ footer{text-align:center;padding:1.5rem;font-size:.72rem;color:var(--muted)}
         <div class="stat"><div class="lbl">Thermal Capacity</div><div class="val" id="s-cap">—</div><div class="sub">kJ / °C</div></div>
         <div class="stat"><div class="lbl">Thermal Time Constant</div><div class="val" id="s-tau">—</div><div class="sub">hours (63 % equilibration)</div></div>
         <div class="stat"><div class="lbl">Max Temp — Continuous</div><div class="val" id="s-tmax">—</div><div class="sub">°C above ambient (July)</div></div>
-        <div class="stat"><div class="lbl">Max Temp — Off-Peak Only</div><div class="val" id="s-tmop">—</div><div class="sub">°C above ambient (July)</div></div>
+        <div class="stat"><div class="lbl">Max Temp — Selected Schedule</div><div class="val" id="s-tmop">—</div><div class="sub">°C above ambient (July)</div></div>
         <div class="stat"><div class="lbl">Time to Heat Pool</div><div class="val" id="s-time">—</div><div class="sub">hours, ambient → target (July)</div></div>
         <div class="stat"><div class="lbl">Heat-up Energy (July)</div><div class="val" id="s-egy">—</div><div class="sub">kWh, ambient → target</div></div>
         <div class="stat"><div class="lbl">Annual Electricity Cost</div><div class="val" id="s-ann">—</div><div class="sub">£ / year (all 12 months)</div></div>
+        <div class="stat"><div class="lbl">Ideal Target @ Cost Target</div><div class="val" id="s-ideal">—</div><div class="sub">°C, based on selected setup</div></div>
       </div>
 
       <div class="alert" id="analysis-box">Loading…</div>
@@ -322,11 +343,11 @@ footer{text-align:center;padding:1.5rem;font-size:.72rem;color:var(--muted)}
                 <th>Heat Loss<br>at Target (W)</th>
                 <th>Net Heat<br>Needed (W)</th>
                 <th>Daily Energy<br>to Maintain</th>
-                <th>Off-Peak<br>Available</th>
+                <th>Heating<br>Available</th>
                 <th>Max Temp<br>Continuous</th>
-                <th>Max Temp<br>Off-Peak Only</th>
+                <th>Max Temp<br>Selected Schedule</th>
                 <th>Target<br>Reachable?</th>
-                <th>Daily Cost<br>(best rate)</th>
+                <th>Daily Cost<br>(selected schedule)</th>
                 <th>Monthly Cost<br>(actual days)</th>
               </tr>
             </thead>
@@ -352,8 +373,14 @@ footer{text-align:center;padding:1.5rem;font-size:.72rem;color:var(--muted)}
           <div class="chart-box"><canvas id="lossChart"></canvas></div>
         </div>
         <div class="card">
-          <div class="card-title">7-Day Temperature Simulation — Off-Peak Heating Schedule (July)</div>
+          <div class="card-title">7-Day Temperature Simulation — Selected Heating Schedule (July)</div>
           <div class="chart-box"><canvas id="schedChart"></canvas></div>
+        </div>
+      </div>
+      <div class="charts-row">
+        <div class="card">
+          <div class="card-title">Ideal Target Temperature vs Annual Cost Target (selected variables)</div>
+          <div class="chart-box"><canvas id="inverseChart"></canvas></div>
         </div>
       </div>
     </main>
@@ -463,29 +490,33 @@ function monthCalc(inp, pool, mi) {
 
   // Off-peak window
   const opH   = opHours(inp.opStart, inp.opEnd);
+  const schedH = inp.heatMode === 'offpeak' ? opH : Math.max(0, Math.min(24, inp.heatHours));
+  const opPartH = Math.min(schedH, opH);
+  const peakPartH = Math.max(0, schedH - opPartH);
   const opAvail = pool.heaterW * opH / 1000;  // kWh available per day at off-peak
+  const schedAvail = pool.heaterW * schedH / 1000;
+  const schedOpAvail = pool.heaterW * opPartH / 1000;
+  const schedPeakAvail = pool.heaterW * peakPartH / 1000;
 
   // Max achievable pool temp: T_eq = T_amb + (heater + solar) / UA
   const maxTCont = ambT + (pool.heaterW + solarW) / pool.UA;
   const maxTOP   = ambT + (pool.heaterW * opH / 24 + solarW) / pool.UA;
+  const maxTSched = ambT + (pool.heaterW * schedH / 24 + solarW) / pool.UA;
 
   const canCont  = maxTCont >= inp.target - 0.05;
   const canOP    = maxTOP   >= inp.target - 0.05;
+  const canSched = maxTSched >= inp.target - 0.05;
 
-  // Daily cost (p): use off-peak as much as possible, top up at peak
-  let cost_p;
-  if (dNeed <= opAvail) {
-    cost_p = dNeed * inp.opRate;
-  } else {
-    cost_p = opAvail * inp.opRate + (dNeed - opAvail) * inp.peakRate;
-  }
-  // If heater can't maintain at all, cost is still the maximum possible output cost
-  if (!canCont) cost_p = (pool.heaterW * 24 / 1000) * inp.peakRate; // upper-bound
+  // Daily cost (p): selected run schedule, off-peak hours consumed first.
+  const usedEnergy = Math.min(dNeed, schedAvail);
+  const usedOffPeak = Math.min(usedEnergy, schedOpAvail);
+  const usedPeak = Math.min(Math.max(0, usedEnergy - usedOffPeak), schedPeakAvail);
+  const cost_p = usedOffPeak * inp.opRate + usedPeak * inp.peakRate;
 
   const monCost = cost_p * DAYSMON[mi] / 100; // £
 
-  return {ambT, dT, qLoss, solarW, qNet, dNeed, opH, opAvail,
-          maxTCont, maxTOP, canCont, canOP, cost_p, monCost};
+  return {ambT, dT, qLoss, solarW, qNet, dNeed, opH, opAvail, schedH, schedAvail,
+          maxTCont, maxTOP, maxTSched, canCont, canOP, canSched, cost_p, monCost};
 }
 
 // Time to heat pool from ambient to target with continuous heater
@@ -543,7 +574,7 @@ function heatingCurve(pool, ambT, target, solarW) {
 }
 
 // ─── CHART INSTANCES ──────────────────────────────────────────────────────────
-let chartCost, chartHeat, chartLoss, chartSched;
+let chartCost, chartHeat, chartLoss, chartSched, chartInverse;
 
 function makeChart(id, config) {
   const ctx = document.getElementById(id).getContext('2d');
@@ -598,6 +629,20 @@ function initCharts() {
       elements:{point:{radius:0}}
     }
   });
+
+  chartInverse = makeChart('inverseChart', {
+    type:'line',
+    data:{datasets:[]},
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}},
+      scales:{
+        x:{type:'linear', title:{display:true,text:'Annual electricity cost (£ / year)'}},
+        y:{title:{display:true,text:'Target temperature (°C)'}}
+      },
+      elements:{point:{radius:0}}
+    }
+  });
 }
 
 // ─── UPDATE ───────────────────────────────────────────────────────────────────
@@ -614,7 +659,12 @@ function go() {
     opRate:  gi('offpk'),
     opStart: gs('op-start'),
     opEnd:   gs('op-end'),
+    heatMode:gs('heat-mode'),
+    heatHours:gi('heat-hours'),
+    costTarget:gi('cost-target')
   };
+  if (!isFinite(inp.costTarget) || inp.costTarget < 0) inp.costTarget = 0;
+  document.getElementById('heat-hours').disabled = inp.heatMode === 'offpeak';
 
   const pool = buildPool(inp);
   const monthly = MONTHS.map((_,mi) => monthCalc(inp, pool, mi));
@@ -630,7 +680,7 @@ function go() {
   document.getElementById('s-tau').textContent  = fmt(pool.tau_h, 1);
 
   const julMaxCont = julData.maxTCont;
-  const julMaxOP   = julData.maxTOP;
+  const julMaxOP   = julData.maxTSched;
   document.getElementById('s-tmax').textContent = fmt(julMaxCont, 1) + ' °C';
   document.getElementById('s-tmop').textContent = fmt(julMaxOP,   1) + ' °C';
 
@@ -653,8 +703,10 @@ function go() {
   const heaterKW    = inp.hpow;
   const heaterOutW  = pool.heaterW;
   const canContJul  = julData.canCont;
-  const canOPJul    = julData.canOP;
+  const canOPJul    = julData.canSched;
   const opH         = opHours(inp.opStart, inp.opEnd);
+  const schedH      = inp.heatMode === 'offpeak' ? opH : Math.max(0, Math.min(24, inp.heatHours));
+  const modeLabel   = inp.heatMode === 'offpeak' ? 'Off-peak only' : `${fmt(schedH,1)} h/day schedule`;
   const maxCurrent  = (inp.hpow * 1000 / 230).toFixed(1);
 
   let html = `<strong>Pool:</strong> ${fmt(pool.vol*1000,0)} L &nbsp;|&nbsp; `;
@@ -678,13 +730,13 @@ function go() {
   }
   html += `<br>`;
 
-  html += `<strong>Off-peak only (${fmt(opH,1)} h/day, ${inp.opStart}–${inp.opEnd}):</strong> `;
+  html += `<strong>${modeLabel} (${inp.opStart}–${inp.opEnd} off-peak window):</strong> `;
   if (canOPJul) {
-    html += `<span class="ok">&#x2714; Off-peak schedule alone CAN maintain ${fmt(inp.target,1)}°C</span>`;
+    html += `<span class="ok">&#x2714; Selected schedule CAN maintain ${fmt(inp.target,1)}°C</span>`;
     html += ` (avg eq. ${fmt(julMaxOP,1)}°C). Cost: ${fmt(julData.cost_p,1)}p/day.`;
   } else {
-    html += `<span class="warn">&#x26A0; Off-peak alone reaches only ${fmt(julMaxOP,1)}°C</span>`;
-    html += ` &mdash; peak-rate top-up or acceptance of lower temp required.`;
+    html += `<span class="warn">&#x26A0; Selected schedule reaches only ${fmt(julMaxOP,1)}°C</span>`;
+    html += ` &mdash; increase daily heating hours, use continuous heating, or accept a lower target.`;
   }
   html += `<br>`;
 
@@ -702,9 +754,9 @@ function go() {
   let rows    = '';
   monthly.forEach((m, mi) => {
     const cls = SUMMER.has(mi) ? ' class="summer"' : '';
-    const rc  = m.canCont ? `<span class="ok">&#x2714; Yes</span>`
-              : m.canOP   ? `<span class="warn">&#x26A0; Off-peak only</span>`
-              :              `<span class="bad">&#x2716; No (${fmt(m.maxTCont,1)}°C max)</span>`;
+    const rc  = m.canSched ? `<span class="ok">&#x2714; Yes</span>`
+              : m.canCont ? `<span class="warn">&#x26A0; No (continuous can, schedule cannot)</span>`
+              :             `<span class="bad">&#x2716; No (${fmt(m.maxTSched,1)}°C max)</span>`;
     rows += `<tr${cls}>
       <td>${MONTHS[mi]}</td>
       <td>${fmt(m.ambT,1)} °C</td>
@@ -712,9 +764,9 @@ function go() {
       <td>${fmt(m.qLoss,0)} W</td>
       <td>${fmt(m.qNet,0)} W</td>
       <td>${fmt(m.dNeed,2)} kWh</td>
-      <td>${fmt(m.opAvail,2)} kWh</td>
+      <td>${fmt(m.schedAvail,2)} kWh</td>
       <td>${fmt(m.maxTCont,1)} °C</td>
-      <td>${fmt(m.maxTOP,1)} °C</td>
+      <td>${fmt(m.maxTSched,1)} °C</td>
       <td>${rc}</td>
       <td>${fmt(m.cost_p,1)} p</td>
       <td>£${fmt(m.monCost,2)}</td>
@@ -798,6 +850,34 @@ function go() {
      borderColor:'#9ca3af', borderWidth:1, borderDash:[2,4], fill:false}
   ];
   chartSched.update();
+
+  // ── Chart: inverse target vs annual cost ───────────────────────────────────
+  const tMin = 18, tMax = 38, tStep = 0.5;
+  const inversePts = [];
+  for (let t = tMin; t <= tMax + 1e-9; t += tStep) {
+    const probeInp = {...inp, target:+t.toFixed(1)};
+    const probeAnnual = MONTHS.reduce((sum, _, mi) => sum + monthCalc(probeInp, pool, mi).monCost, 0);
+    inversePts.push({x:+probeAnnual.toFixed(2), y:+t.toFixed(1)});
+  }
+  inversePts.sort((a,b)=>a.x-b.x);
+
+  const validForBudget = inversePts.filter(p => p.x <= inp.costTarget + 1e-9);
+  const idealPoint = validForBudget.length ? validForBudget[validForBudget.length - 1] : inversePts[0];
+  document.getElementById('s-ideal').textContent = `${fmt(idealPoint.y,1)} °C`;
+
+  const minCost = inversePts[0].x;
+  const maxCost = inversePts[inversePts.length - 1].x;
+  chartInverse.data.datasets = [
+    {label:'Target temperature by annual cost', data:inversePts, borderColor:'#0077b6', borderWidth:2, fill:false, tension:.2, pointRadius:0},
+    {label:`Cost target £${fmt(inp.costTarget,0)}/yr`, data:[{x:inp.costTarget, y:tMin}, {x:inp.costTarget, y:tMax}],
+     borderColor:'#dc2626', borderWidth:1.5, borderDash:[6,4], fill:false, pointRadius:0},
+    {label:`Ideal target ${fmt(idealPoint.y,1)}°C`, data:[idealPoint], borderColor:'#059669', backgroundColor:'#059669', showLine:false, pointRadius:5}
+  ];
+  chartInverse.options.scales.x.min = Math.min(minCost, inp.costTarget) * 0.95;
+  chartInverse.options.scales.x.max = Math.max(maxCost, inp.costTarget) * 1.05;
+  chartInverse.options.scales.y.min = tMin;
+  chartInverse.options.scales.y.max = tMax;
+  chartInverse.update();
 }
 
 // ─── UI DRAWER + PWA ──────────────────────────────────────────────────────────
