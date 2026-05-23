@@ -291,7 +291,7 @@ footer{text-align:center;padding:1.5rem;font-size:.72rem;color:var(--muted)}
           </div>
 
           <div class="field">
-            <label for="heat-hours">Heating Hours per Day <span class="fval" id="heat-hours-v" aria-live="polite">24.0 h</span></label>
+            <label for="heat-hours">Heating Hours per Day <span class="fval" id="heat-hours-v">24.0 h</span></label>
             <input type="range" id="heat-hours" min="0" max="24" step="0.5" value="24"
                   aria-describedby="heat-hours-help"
                   oninput="sv('heat-hours','heat-hours-v',' h',1);go()">
@@ -300,6 +300,7 @@ footer{text-align:center;padding:1.5rem;font-size:.72rem;color:var(--muted)}
           <div class="field">
             <label for="cost-target">Annual Cost Target</label>
             <input type="number" id="cost-target" min="0" max="50000" step="10" value="500"
+                  aria-label="Annual Cost Target in pounds per year"
                   aria-describedby="cost-target-help"
                   oninput="go()"> <span style="font-size:.75rem;color:var(--muted)">£ / year</span>
           </div>
@@ -431,6 +432,11 @@ function opHours(start, end) {
   const s = parseHHMM(start), e = parseHHMM(end);
   return e > s ? e - s : 24 - s + e;
 }
+function schedHoursFromInput(inp) {
+  return inp.heatMode === 'offpeak'
+    ? opHours(inp.opStart, inp.opEnd)
+    : Math.max(0, Math.min(24, inp.heatHours));
+}
 
 function fmt(n, dp=0) { return n.toFixed(dp); }
 function fmtN(n) { return Math.round(n).toLocaleString(); }
@@ -493,7 +499,7 @@ function monthCalc(inp, pool, mi) {
 
   // Off-peak window
   const opH   = opHours(inp.opStart, inp.opEnd);
-  const schedH = inp.heatMode === 'offpeak' ? opH : Math.max(0, Math.min(24, inp.heatHours));
+  const schedH = schedHoursFromInput(inp);
   const opPartH = Math.min(schedH, opH);
   const peakPartH = Math.max(0, schedH - opPartH);
   const opAvail = pool.heaterW * opH / 1000;  // kWh available per day at off-peak
@@ -708,7 +714,7 @@ function go() {
   const canContJul  = julData.canCont;
   const canOPJul    = julData.canSched;
   const opH         = opHours(inp.opStart, inp.opEnd);
-  const schedH      = inp.heatMode === 'offpeak' ? opH : Math.max(0, Math.min(24, inp.heatHours));
+  const schedH      = schedHoursFromInput(inp);
   const modeLabel   = inp.heatMode === 'offpeak' ? 'Off-peak only' : `${fmt(schedH,1)} h/day schedule`;
   const maxCurrent  = (inp.hpow * 1000 / 230).toFixed(1);
 
