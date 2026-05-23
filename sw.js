@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'splash-shell-v1';
+const CACHE_NAME = 'pool-calculator-shell-v1';
 const APP_SHELL = [
   './',
   './index.htm',
@@ -31,7 +31,7 @@ self.addEventListener('fetch', (event) => {
     caches.match(event.request).then((cached) => {
       if (cached) return cached;
       return fetch(event.request).then((response) => {
-        if (!response || response.status !== 200 || response.type === 'opaque') {
+        if (!response || !response.ok) {
           return response;
         }
         const copy = response.clone();
