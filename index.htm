@@ -753,8 +753,8 @@ function initControlsDrawer() {
   closeBtn.addEventListener('click', () => setOpen(false));
   backdrop.addEventListener('click', () => setOpen(false));
 
-  window.matchMedia('(min-width: 981px)').addEventListener('change', e => {
-    if (e.matches) setOpen(false);
+  window.matchMedia('(max-width: 980px)').addEventListener('change', e => {
+    if (!e.matches) setOpen(false);
   });
 }
 
