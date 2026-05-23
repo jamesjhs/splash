@@ -1,0 +1,24 @@
+{
+  "name": "splash!",
+  "short_name": "splash!",
+  "description": "splash! costing for your playpool — thermal and energy cost calculator.",
+  "start_url": "./index.htm",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#eef6fc",
+  "theme_color": "#023e8a",
+  "icons": [
+    {
+      "src": "./icons/pool-icon-192.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/pool-icon-512.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
